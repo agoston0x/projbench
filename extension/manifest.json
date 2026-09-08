@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "projbench",
+  "version": "0.1.0",
+  "description": "See a project's history as a tree: every version, every direction, plain language.",
+  "action": { "default_title": "Open projbench" },
+  "background": { "service_worker": "background.js" },
+  "side_panel": { "default_path": "panel.html" },
+  "permissions": ["sidePanel"],
+  "host_permissions": ["https://api.github.com/*"]
+}

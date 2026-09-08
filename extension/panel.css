@@ -1,0 +1,119 @@
+/* Dark by default, light if the system asks. Nothing here is chrome-specific. */
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --ink: #17171c;
+  --muted: #6a6a78;
+  --line: rgba(128, 128, 140, .26);
+  --card: rgba(128, 128, 140, .07);
+  --accent: #6c3df4;
+  --lane-0: #6c3df4;
+  --lane-1: #0f9bd7;
+  --lane-2: #18b56b;
+  --lane-3: #e09a27;
+  --lane-4: #d9418f;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #1c1c20; --ink: #ececf1; --muted: #9a9aa8; --card: rgba(128, 128, 140, .12); }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+body { display: flex; flex-direction: column; }
+
+header {
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 9px;
+}
+h1 { margin: 0; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; opacity: .55; }
+
+.repo { display: flex; gap: 6px; }
+.repo input {
+  flex: 1; min-width: 0;
+  font: 13px ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: inherit; background: var(--card);
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px;
+}
+.repo input:focus { outline: none; border-color: var(--accent); }
+
+button {
+  font: inherit; font-size: 12px; cursor: pointer; color: inherit;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 8px; padding: 5px 10px;
+}
+button:hover { background: rgba(128, 128, 140, .2); }
+button:active { transform: translateY(1px); }
+
+.toolbar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border-bottom: 1px solid var(--line);
+}
+.toolbar .grow { flex: 1; }
+#zoomLevel { font: 11px ui-monospace, Menlo, monospace; color: var(--muted); min-width: 38px; text-align: center; }
+
+#stage { flex: 1; overflow: hidden; position: relative; cursor: grab; }
+#stage.panning { cursor: grabbing; }
+
+#canvas { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+#lines { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; }
+#nodes { position: absolute; top: 0; left: 0; }
+
+/* one version */
+.node {
+  position: absolute;
+  width: 236px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--lane);
+  border-radius: 10px;
+  padding: 9px 11px;
+  cursor: pointer;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.node:hover { box-shadow: 0 3px 14px rgba(0, 0, 0, .16); }
+.node.open { border-color: var(--lane); box-shadow: 0 4px 18px rgba(0, 0, 0, .2); }
+
+.node .title {
+  font-weight: 550; line-height: 1.3;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.node.open .title { white-space: normal; }
+
+.node .meta {
+  margin-top: 3px; font-size: 11px; color: var(--muted);
+  display: flex; gap: 6px; align-items: baseline;
+}
+.node .meta .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.node .tag {
+  font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--lane); border: 1px solid var(--lane); border-radius: 5px;
+  padding: 0 4px; white-space: nowrap;
+}
+
+.node .body {
+  margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line);
+  font-size: 12.5px; white-space: pre-wrap; word-break: break-word;
+}
+.node .hash {
+  margin-top: 6px; font: 11px ui-monospace, Menlo, monospace; color: var(--muted);
+}
+
+/* the dot sitting on the lane */
+.dot {
+  position: absolute; width: 11px; height: 11px; border-radius: 50%;
+  background: var(--lane); border: 2px solid var(--bg);
+}
+
+footer {
+  padding: 7px 14px; border-top: 1px solid var(--line);
+  font: 11px ui-monospace, Menlo, monospace; color: var(--muted);
+}

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>projbench</title>
+<link rel="stylesheet" href="panel.css" />
+</head>
+<body>
+  <header>
+    <h1>projbench</h1>
+    <div class="repo">
+      <input id="repo" value="agoston0x/projbench" spellcheck="false" />
+      <button id="load" title="Load this repository">Load</button>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <button data-zoom="out" title="Zoom out">−</button>
+    <span id="zoomLevel">100%</span>
+    <button data-zoom="in" title="Zoom in">+</button>
+    <button data-zoom="fit" title="Reset">Fit</button>
+    <span class="grow"></span>
+    <button id="expandAll">Expand all</button>
+    <button id="collapseAll">Collapse all</button>
+  </div>
+
+  <div id="stage">
+    <div id="canvas">
+      <svg id="lines"></svg>
+      <div id="nodes"></div>
+    </div>
+  </div>
+
+  <footer id="status">idle</footer>
+
+  <script src="github.js"></script>
+  <script src="tree.js"></script>
+  <script src="panel.js"></script>
+</body>
+</html>
