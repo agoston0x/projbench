@@ -161,19 +161,36 @@ function fit() {
   place();
 }
 
+/**
+ * Panning must not eat clicks on cards. So the pointer is only captured once the
+ * hand has actually moved — below that threshold it stays an ordinary click.
+ */
 let drag = null;
+const DRAG_START = 4;
+
 stage.addEventListener("pointerdown", e => {
-  drag = { x: e.clientX - view.x, y: e.clientY - view.y };
-  stage.classList.add("panning");
-  stage.setPointerCapture(e.pointerId);
+  drag = { x: e.clientX - view.x, y: e.clientY - view.y, from: [e.clientX, e.clientY], moved: false, id: e.pointerId };
 });
+
 stage.addEventListener("pointermove", e => {
   if (!drag) return;
+  if (!drag.moved) {
+    const far = Math.hypot(e.clientX - drag.from[0], e.clientY - drag.from[1]) > DRAG_START;
+    if (!far) return;
+    drag.moved = true;
+    stage.classList.add("panning");
+    stage.setPointerCapture(drag.id);
+  }
   view.x = e.clientX - drag.x;
   view.y = e.clientY - drag.y;
   place();
 });
-const endDrag = () => { drag = null; stage.classList.remove("panning"); };
+
+const endDrag = () => {
+  if (drag?.moved) stage.releasePointerCapture?.(drag.id);
+  drag = null;
+  stage.classList.remove("panning");
+};
 stage.addEventListener("pointerup", endDrag);
 stage.addEventListener("pointercancel", endDrag);
 
@@ -190,6 +207,28 @@ stage.addEventListener("wheel", e => {
 }, { passive: false });
 
 /* ------------------------------- controls ------------------------------ */
+
+/* --------------------------------- tabs -------------------------------- */
+
+let loadedHistory = false;
+
+function showTab(which) {
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.dataset.tab === which));
+  document.querySelectorAll(".view").forEach(v => v.classList.toggle("on", v.dataset.view === which));
+  if (which === "history") {
+    if (!loadedHistory) { loadedHistory = true; load(); }
+    else if (current) fit();
+  } else {
+    MapView.render();
+    MapView.watch();
+    say(Store.local ? "map kept in this browser" : "map kept in the extension");
+  }
+}
+
+document.querySelectorAll(".tab").forEach(t => { t.onclick = () => showTab(t.dataset.tab); });
+
+document.getElementById("addArea").onclick = () =>
+  Promise.resolve(window.prompt("Name of the area", "")).then(n => n && ProjectMap.addArea(n).then(MapView.render));
 
 document.getElementById("load").onclick = load;
 document.getElementById("repo").addEventListener("keydown", e => { if (e.key === "Enter") load(); });
@@ -209,4 +248,4 @@ document.getElementById("expandAll").onclick = () => {
 };
 document.getElementById("collapseAll").onclick = () => { open = new Set(); draw(); };
 
-load();
+ProjectMap.load().then(() => showTab("history"));
