@@ -227,9 +227,6 @@ function showTab(which) {
 
 document.querySelectorAll(".tab").forEach(t => { t.onclick = () => showTab(t.dataset.tab); });
 
-document.getElementById("addArea").onclick = () =>
-  Promise.resolve(window.prompt("Name of the area", "")).then(n => n && ProjectMap.addArea(n).then(MapView.render));
-
 document.getElementById("load").onclick = load;
 document.getElementById("repo").addEventListener("keydown", e => { if (e.key === "Enter") load(); });
 

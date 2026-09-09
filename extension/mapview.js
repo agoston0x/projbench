@@ -1,230 +1,237 @@
 /**
  * The map, drawn.
  *
- * An area is a bubble; its parts hang beneath it on a line. A part with a chosen
- * option is settled, a part with options and no choice is an open question — that
- * contrast is the whole reason to look at a project this way.
+ * One kind of bubble, nested. A bubble is a single row when it is closed — name on
+ * the left, controls on the right — and opens to show whatever is inside it. The
+ * children of a bubble look exactly like it, because they are the same thing.
  *
- * The layout is measured, not guessed: narrow panels stack everything in one
- * column, wider ones put areas side by side, and a ResizeObserver re-runs it when
- * the user drags the panel edge.
+ * Everything happens in place: ＋ makes a child and puts the cursor in its name,
+ * ✎ turns the name into a field. Nothing interrupts with a dialog.
  */
 const MapView = (() => {
-  const COL_MIN = 300;      // an area column needs at least this much room
+  const COL_MIN = 300;      // a top-level column needs at least this much room
   const COL_GAP = 26;
   const PAD = 16;
+  const LANES = 5;          // how many hues before they repeat
 
-  let host = null;          // the scrolling stage
+  let host = null;
   let observer = null;
+  let editing = null;       // id of the bubble whose name is being typed
 
-  /* -------------------------------- layout ------------------------------- */
-
-  /** How many area columns fit, given the width we actually have. */
   const columnsFor = width => Math.max(1, Math.floor((width - PAD * 2 + COL_GAP) / (COL_MIN + COL_GAP)));
+
+  /* -------------------------------- render ------------------------------- */
 
   function render() {
     host = host ?? document.getElementById("mapStage");
     const map = ProjectMap.get();
 
     host.replaceChildren();
-    host.classList.toggle("empty", map.areas.length === 0);
+    const empty = map.nodes.length === 0;
+    host.classList.toggle("empty", empty);
 
-    if (map.areas.length === 0) {
+    if (empty) {
       host.append(emptyState());
-      count();
-      return;
+      return count();
     }
 
-    const cols = columnsFor(host.clientWidth || 380);
     const grid = document.createElement("div");
     grid.className = "grid";
-    grid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+    grid.style.gridTemplateColumns = `repeat(${columnsFor(host.clientWidth || 380)}, minmax(0, 1fr))`;
 
-    map.areas.forEach((area, i) => grid.append(areaColumn(area, i)));
-
-    const add = document.createElement("button");
-    add.className = "bubble add area";
-    add.textContent = "＋ Area";
-    add.onclick = () => ask("Name of the area").then(n => n && ProjectMap.addArea(n).then(render));
-    grid.append(add);
+    map.nodes.forEach((n, i) => grid.append(bubble(n, 0, i)));
+    grid.append(addBox(null, "＋ Area"));
 
     host.append(grid);
     count();
-    requestAnimationFrame(drawConnectors);
+    requestAnimationFrame(drawWires);
+    focusEditor();
   }
 
-  /** One area and everything under it — its own little tree. */
-  function areaColumn(area, index) {
-    const col = document.createElement("div");
-    col.className = "col";
-    col.dataset.lane = index % 5;
+  /**
+   * @param depth how deep we are, for sizing
+   * @param seed  which hue this branch took, inherited by everything under it
+   */
+  function bubble(n, depth, seed) {
+    const wrap = document.createElement("div");
+    wrap.className = "branch";
+    wrap.dataset.lane = seed % LANES;
 
-    const bubble = document.createElement("div");
-    bubble.className = "bubble area";
+    const box = document.createElement("div");
+    box.className = "bubble" + (depth === 0 ? " top" : "");
+    box.dataset.depth = Math.min(depth, 3);
+    box.dataset.id = n.id;
 
-    const title = document.createElement("div");
-    title.className = "bubbleName";
-    title.textContent = area.name;
-    title.title = "Click to rename";
-    title.onclick = () => ask("Rename area", area.name).then(n => n && ProjectMap.rename(area.id, n).then(render));
+    const row = document.createElement("div");
+    row.className = "row";
+    row.append(name(n), controls(n));
+    box.append(row);
 
-    const sub = document.createElement("div");
-    sub.className = "bubbleSub";
-    const open = area.parts.filter(p => p.vars.length > 1 && p.pick === null).length;
-    sub.textContent = area.parts.length === 0
-      ? "empty"
-      : `${area.parts.length} part${area.parts.length === 1 ? "" : "s"}` + (open ? ` · ${open} open` : "");
+    if (n.children.length && !n.open) {
+      const hint = document.createElement("div");
+      hint.className = "hint";
+      hint.textContent = n.children.length + " inside";
+      row.insertBefore(hint, row.lastChild);
+    }
 
-    const tools = document.createElement("div");
-    tools.className = "bubbleTools";
-    tools.append(
-      iconButton("＋", "Add a part", () => ask("Name of the part").then(n => n && ProjectMap.addPart(area.id, n).then(render))),
-      iconButton(area.open ? "▾" : "▸", area.open ? "Collapse" : "Expand", () => ProjectMap.toggle(area.id).then(render)),
-      iconButton("✕", "Remove this area", () => ProjectMap.remove(area.id).then(render), "danger"),
-    );
+    // the whole bubble is the target, apart from the controls themselves
+    box.onclick = e => {
+      if (e.target.closest("button, input")) return;
+      if (!n.children.length) return;
+      ProjectMap.toggle(n.id).then(render);
+    };
 
-    bubble.append(title, sub, tools);
-    col.append(bubble);
+    wrap.append(box);
 
-    if (area.open && area.parts.length) {
+    if (n.open && n.children.length) {
       const kids = document.createElement("div");
       kids.className = "kids";
-      for (const part of area.parts) kids.append(partBubble(part));
-      col.append(kids);
+      n.children.forEach((c, i) => kids.append(bubble(c, depth + 1, depth === 0 ? seed : seed + i + 1)));
+      wrap.append(kids);
     }
-    return col;
+    return wrap;
   }
 
-  function partBubble(part) {
-    const decided = part.pick !== null && part.vars[part.pick];
-    const question = !decided && part.vars.length > 1;
+  /* ------------------------------- pieces -------------------------------- */
 
+  function name(n) {
     const el = document.createElement("div");
-    el.className = "bubble part" + (decided ? " decided" : question ? " question" : "");
-    el.dataset.part = part.id;
+    el.className = "bubbleName";
 
-    const head = document.createElement("div");
-    head.className = "partTop";
-
-    const name = document.createElement("div");
-    name.className = "bubbleName";
-    name.textContent = part.name;
-    name.title = "Click to rename";
-    name.onclick = () => ask("Rename part", part.name).then(n => n && ProjectMap.rename(part.id, n).then(render));
-
-    head.append(name, iconButton("✕", "Remove this part", () => ProjectMap.remove(part.id).then(render), "danger"));
-    el.append(head);
-
-    if (decided || question) {
-      const state = document.createElement("div");
-      state.className = "bubbleSub";
-      state.textContent = decided ? part.vars[part.pick].n : "undecided";
-      el.append(state);
+    if (editing === n.id) {
+      el.append(field(n.name, next => {
+        editing = null;
+        if (next.trim()) ProjectMap.rename(n.id, next.trim()).then(render);
+        else if (!n.name) ProjectMap.remove(n.id).then(render);   // abandoned before naming
+        else render();
+      }));
+      return el;
     }
 
-    const chips = document.createElement("div");
-    chips.className = "chips";
-    part.vars.forEach((v, i) => {
-      const chip = document.createElement("button");
-      chip.className = "chip" + (part.pick === i ? " on" : "");
-      chip.textContent = v.n;
-      chip.title = part.pick === i ? "Chosen — click to reopen the question" : "Choose this one";
-      chip.onclick = () => ProjectMap.choose(part.id, i).then(render);
-      chips.append(chip);
-    });
-    const more = document.createElement("button");
-    more.className = "chip add";
-    more.textContent = "＋";
-    more.title = "Add an option";
-    more.onclick = () => ask("Name of the option").then(n => n && ProjectMap.addVariant(part.id, n).then(render));
-    chips.append(more);
-
-    el.append(chips);
+    el.textContent = n.name || "Untitled";
     return el;
+  }
+
+  function field(value, done) {
+    const input = document.createElement("input");
+    input.className = "nameField";
+    input.value = value ?? "";
+    input.placeholder = "Name it";
+    input.onkeydown = e => {
+      if (e.key === "Enter") { e.preventDefault(); input.blur(); }
+      if (e.key === "Escape") { input.dataset.cancel = "1"; input.blur(); }
+      e.stopPropagation();
+    };
+    input.onclick = e => e.stopPropagation();
+    input.onblur = () => done(input.dataset.cancel ? value : input.value);
+    return input;
+  }
+
+  /** ＋ ✎ ✕, on the same row as the name. */
+  function controls(n) {
+    const row = document.createElement("div");
+    row.className = "bubbleTools";
+    row.append(
+      icon("＋", "Add something inside", () => {
+        const child = ProjectMap.add(n.id, "");
+        if (child) { editing = child.id; render(); }
+      }),
+      icon("✎", "Rename", () => { editing = n.id; render(); }),
+      icon("✕", "Remove", () => ProjectMap.remove(n.id).then(render), "danger"),
+    );
+    return row;
+  }
+
+  function icon(glyph, label, onClick, extra = "") {
+    const b = document.createElement("button");
+    b.className = "icon " + extra;
+    b.textContent = glyph;
+    b.title = label;
+    b.onclick = e => { e.stopPropagation(); onClick(); };
+    return b;
+  }
+
+  function addBox(parentId, label) {
+    const b = document.createElement("button");
+    b.className = "bubble add";
+    b.textContent = label;
+    b.onclick = () => {
+      const fresh = ProjectMap.add(parentId, "");
+      if (fresh) { editing = fresh.id; render(); }
+    };
+    return b;
   }
 
   function emptyState() {
     const wrap = document.createElement("div");
     wrap.className = "blank";
-
     const words = document.createElement("p");
-    words.textContent = "Nothing mapped yet. Areas are the parts a project is made of — rooms, panels, sections — and each one holds the decisions still to make.";
-
-    const add = document.createElement("button");
-    add.className = "bubble add area";
-    add.textContent = "＋ Add the first area";
-    add.onclick = () => ask("Name of the area").then(n => n && ProjectMap.addArea(n).then(render));
-
-    wrap.append(add, words);
+    words.textContent = "Nothing mapped yet. Add the parts this project is made of — rooms, panels, sections — and put whatever belongs to them inside.";
+    wrap.append(addBox(null, "＋ Add the first area"), words);
     return wrap;
   }
 
-  /* ------------------------------ connectors ----------------------------- */
+  function focusEditor() {
+    const input = host.querySelector(".nameField");
+    if (!input) return;
+    input.focus();
+    input.select();
+  }
 
-  /** Lines from each area bubble down to its parts, drawn over the laid-out DOM. */
-  function drawConnectors() {
+  /* -------------------------------- wires -------------------------------- */
+
+  /** A line from each bubble down to the children it holds. */
+  function drawWires() {
     host.querySelectorAll("svg.wires").forEach(s => s.remove());
 
-    for (const col of host.querySelectorAll(".col")) {
-      const area = col.querySelector(".bubble.area");
-      const kids = [...col.querySelectorAll(".kids > .bubble.part")];
-      if (!area || kids.length === 0) continue;
+    for (const branch of host.querySelectorAll(".branch")) {
+      const box = branch.querySelector(":scope > .bubble");
+      const kids = [...branch.querySelectorAll(":scope > .kids > .branch > .bubble")];
+      if (!box || kids.length === 0) continue;
 
-      const box = col.getBoundingClientRect();
+      const frame = branch.getBoundingClientRect();
       const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       svg.setAttribute("class", "wires");
-      svg.setAttribute("width", box.width);
-      svg.setAttribute("height", box.height);
+      svg.setAttribute("width", frame.width);
+      svg.setAttribute("height", frame.height);
 
-      const from = area.getBoundingClientRect();
-      const x1 = from.left - box.left + 22;
-      const y1 = from.bottom - box.top;
+      const from = box.getBoundingClientRect();
+      const x1 = from.left - frame.left + 18;
+      const y1 = from.bottom - frame.top;
 
       for (const kid of kids) {
         const to = kid.getBoundingClientRect();
-        const x2 = to.left - box.left;
-        const y2 = to.top - box.top + 18;
+        const x2 = to.left - frame.left;
+        const y2 = to.top - frame.top + 16;
         const mid = y1 + (y2 - y1) * 0.55;
         const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
         path.setAttribute("d", `M ${x1} ${y1} C ${x1} ${mid}, ${x1} ${y2}, ${x2} ${y2}`);
         path.setAttribute("fill", "none");
         path.setAttribute("stroke", "currentColor");
         path.setAttribute("stroke-width", "1.5");
-        path.setAttribute("opacity", ".5");
+        path.setAttribute("opacity", ".45");
         svg.append(path);
       }
-      col.prepend(svg);
+      branch.prepend(svg);
     }
   }
 
-  /* -------------------------------- plumbing ----------------------------- */
+  /* ------------------------------- plumbing ------------------------------ */
 
   function count() {
     const c = ProjectMap.counts();
-    document.getElementById("mapCount").textContent = c.areas === 0
+    document.getElementById("mapCount").textContent = c.nodes === 0
       ? "nothing mapped yet"
-      : `${c.areas} area${c.areas === 1 ? "" : "s"} · ${c.parts} part${c.parts === 1 ? "" : "s"} · ${c.open} open`;
+      : `${c.nodes} bubble${c.nodes === 1 ? "" : "s"} · ${c.depth} level${c.depth === 1 ? "" : "s"} deep`;
   }
 
-  function iconButton(glyph, title, onClick, extra = "") {
-    const b = document.createElement("button");
-    b.className = "icon " + extra;
-    b.textContent = glyph;
-    b.title = title;
-    b.onclick = e => { e.stopPropagation(); onClick(); };
-    return b;
-  }
-
-  const ask = (label, value = "") => Promise.resolve(window.prompt(label, value));
-
-  /** Re-lay out when the panel is dragged wider or narrower. */
   function watch() {
     host = host ?? document.getElementById("mapStage");
     if (observer || !window.ResizeObserver) return;
     let last = 0;
     observer = new ResizeObserver(() => {
       const cols = columnsFor(host.clientWidth);
-      if (cols === last) return drawConnectors();
+      if (cols === last) return drawWires();
       last = cols;
       render();
     });
